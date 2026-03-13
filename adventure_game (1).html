@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>The Lost Key - Text Adventure</title>
+  <style>
+    body {
+      background: #1a1a1a;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      font-size: 15px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 30px 20px;
+      min-height: 100vh;
+      margin: 0;
+    }
+
+    h1 {
+      color: #f0c040;
+      letter-spacing: 3px;
+      margin-bottom: 4px;
+      font-size: 22px;
+    }
+
+    .subtitle {
+      color: #666;
+      font-size: 12px;
+      margin-bottom: 20px;
+    }
+
+    #game-box {
+      width: 100%;
+      max-width: 640px;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    #output {
+      height: 380px;
+      overflow-y: auto;
+      padding: 18px;
+      line-height: 1.8;
+    }
+
+    #output::-webkit-scrollbar { width: 4px; }
+    #output::-webkit-scrollbar-thumb { background: #333; }
+
+    .line-narrative { color: #ddd; }
+    .line-cmd { color: #888; }
+    .line-cmd::before { content: '> '; color: #f0c040; }
+    .line-good { color: #6dff8a; }
+    .line-bad  { color: #ff6060; }
+    .line-info { color: #f0c040; }
+    .line-sep  { color: #333; }
+
+    #input-row {
+      display: flex;
+      border-top: 1px solid #333;
+      padding: 10px 14px;
+      gap: 8px;
+      background: #0e0e0e;
+    }
+
+    #input-row span { color: #f0c040; line-height: 32px; }
+
+    input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      font-size: 15px;
+    }
+
+    button {
+      background: #222;
+      border: 1px solid #444;
+      color: #f0c040;
+      font-family: 'Courier New', monospace;
+      padding: 5px 14px;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    button:hover { background: #2a2a2a; }
+
+    #hint-bar {
+      max-width: 640px;
+      width: 100%;
+      margin-top: 10px;
+      color: #555;
+      font-size: 12px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<h1>THE LOST KEY</h1>
+<div class="subtitle">A Simple Text Adventure · College Prototype</div>
+
+<div id="game-box">
+  <div id="output"></div>
+  <div id="input-row">
+    <span>></span>
+    <input id="cmd" type="text" placeholder="type a command..." autocomplete="off" spellcheck="false"/>
+    <button onclick="submit()">GO</button>
+  </div>
+</div>
+<div id="hint-bar">Commands: go north · go south · go east · go west · look · take [item] · use [item] · inventory · help</div>
+
+<script>
+// ── ROOMS ──────────────────────────────────────────────────────────
+const rooms = {
+  bedroom: {
+    name: "Your Bedroom",
+    description: "A small messy bedroom. There is a bed, a desk, and a door to the south. A rusty key is sitting on the desk.",
+    exits: { south: "hallway" },
+    items: ["rusty key"],
+  },
+  hallway: {
+    name: "Hallway",
+    description: "A narrow hallway. Your bedroom is to the north. A locked door is to the east. The living room is to the west.",
+    exits: { north: "bedroom", east: "outside", west: "living_room" },
+    items: [],
+    locked_east: true,
+  },
+  living_room: {
+    name: "Living Room",
+    description: "A cozy living room with an old couch and a bookshelf. There is a sandwich on the coffee table.",
+    exits: { east: "hallway" },
+    items: ["sandwich"],
+  },
+  outside: {
+    name: "Outside",
+    description: "You step outside into fresh air. The sunlight feels warm on your face.",
+    exits: {},
+    items: [],
+    final: true,
+  },
+};
+
+// ── STATE ──────────────────────────────────────────────────────────
+let currentRoom = "bedroom";
+let inventory = [];
+let moves = 0;
+let gameOver = false;
+
+// ── OUTPUT ─────────────────────────────────────────────────────────
+function print(text, cls = "line-narrative") {
+  const div = document.createElement("div");
+  div.className = cls;
+  div.innerHTML = text;
+  document.getElementById("output").appendChild(div);
+  document.getElementById("output").scrollTop = 9999;
+}
+
+function sep() { print("──────────────────────────────", "line-sep"); }
+
+// ── LOOK ───────────────────────────────────────────────────────────
+function look() {
+  const room = rooms[currentRoom];
+  print("<b>" + room.name + "</b>", "line-info");
+  print(room.description);
+
+  if (room.items.length > 0) {
+    print("You see here: " + room.items.join(", ") + ".", "line-good");
+  }
+
+  const exitList = Object.keys(room.exits);
+  if (room.locked_east) {
+    print("Exits: " + exitList.map(e => e === "east" ? "east (locked)" : e).join(", ") + ".");
+  } else {
+    print("Exits: " + (exitList.length ? exitList.join(", ") : "none") + ".");
+  }
+}
+
+// ── GO ─────────────────────────────────────────────────────────────
+function go(dir) {
+  const room = rooms[currentRoom];
+  if (!room.exits[dir]) {
+    print("You can't go that way.", "line-bad"); return;
+  }
+  if (dir === "east" && room.locked_east) {
+    if (inventory.includes("rusty key")) {
+      print("You use the rusty key to unlock the door. It creaks open!", "line-good");
+      room.locked_east = false;
+    } else {
+      print("The door is locked. You need a key.", "line-bad"); return;
+    }
+  }
+  currentRoom = room.exits[dir];
+  moves++;
+  sep();
+  look();
+
+  if (rooms[currentRoom].final) {
+    sep();
+    print("You escaped! Congratulations! You win!", "line-good");
+    print("Total moves: " + moves, "line-info");
+    gameOver = true;
+  }
+}
+
+// ── TAKE ───────────────────────────────────────────────────────────
+function take(item) {
+  const room = rooms[currentRoom];
+  const idx = room.items.findIndex(i => i === item);
+  if (idx === -1) {
+    print('There is no "' + item + '" here.', "line-bad"); return;
+  }
+  room.items.splice(idx, 1);
+  inventory.push(item);
+  print("You picked up the " + item + ".", "line-good");
+}
+
+// ── USE ────────────────────────────────────────────────────────────
+function use(item) {
+  if (!inventory.includes(item)) {
+    print('You don\'t have "' + item + '".', "line-bad"); return;
+  }
+  if (item === "sandwich") {
+    print("You eat the sandwich. Tasty!", "line-good");
+    inventory = inventory.filter(i => i !== item);
+  } else if (item === "rusty key") {
+    print("You hold up the rusty key. It looks like it opens a door nearby.", "line-narrative");
+  } else {
+    print("Nothing happens.", "line-narrative");
+  }
+}
+
+// ── INVENTORY ──────────────────────────────────────────────────────
+function showInventory() {
+  if (inventory.length === 0) {
+    print("Your inventory is empty.", "line-narrative");
+  } else {
+    print("You are carrying: " + inventory.join(", ") + ".", "line-info");
+  }
+}
+
+// ── HELP ───────────────────────────────────────────────────────────
+function help() {
+  print("Commands:", "line-info");
+  print("  look — describe the current room");
+  print("  go [direction] — move north / south / east / west");
+  print("  take [item] — pick up an item");
+  print("  use [item] — use an item from your inventory");
+  print("  inventory — see what you are carrying");
+  print("  help — show this list");
+}
+
+// ── PARSER ─────────────────────────────────────────────────────────
+function submit() {
+  const input = document.getElementById("cmd");
+  const raw = input.value.trim().toLowerCase();
+  input.value = "";
+  if (!raw) return;
+
+  print(raw, "line-cmd");
+
+  if (gameOver) { print("The game is over. Refresh the page to play again.", "line-bad"); return; }
+
+  if (raw === "look" || raw === "l")                    { look(); return; }
+  if (raw === "inventory" || raw === "i" || raw === "inv") { showInventory(); return; }
+  if (raw === "help" || raw === "h")                    { help(); return; }
+  if (raw.startsWith("go "))                            { go(raw.slice(3).trim()); return; }
+  if (["north","south","east","west"].includes(raw))    { go(raw); return; }
+  if (raw.startsWith("take "))                          { take(raw.slice(5).trim()); return; }
+  if (raw.startsWith("pick up "))                       { take(raw.slice(8).trim()); return; }
+  if (raw.startsWith("use "))                           { use(raw.slice(4).trim()); return; }
+
+  print("I don't understand that. Type 'help' for a list of commands.", "line-bad");
+}
+
+document.getElementById("cmd").addEventListener("keydown", e => {
+  if (e.key === "Enter") submit();
+});
+
+// ── START ──────────────────────────────────────────────────────────
+print("Welcome to <b>The Lost Key</b>!", "line-info");
+print("Your goal: find the key and escape through the locked door.");
+print("Type <b>help</b> to see commands.");
+sep();
+look();
+document.getElementById("cmd").focus();
+</script>
+</body>
+</html>
