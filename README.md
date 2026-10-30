@@ -54,5 +54,5 @@ The-Lost-Key/
 - Improve the game design and animations.
 
 ## Author
-Your Name
+Divya Dumpeti
 
